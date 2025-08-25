@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f9fbff;
+  --bg-soft: #ffffffcc;
+  --fg: #0a1220;
+  --border: rgba(10,18,32,0.08);
+  --primary: #6EC1E4;      /* light-mode bubble blue */
+  --primary-600: #4DA6FF;
+  --glass: rgba(255,255,255,0.6);
+  --glow: 0 0 24px rgba(77,166,255,0.45);
+  --display-font: "Orbitron","Oxanium",system-ui,sans-serif;
+  --body-font: "Inter",system-ui,sans-serif;
+}
+
+.dark {
+  --bg: #0b0d10;           /* black */
+  --bg-soft: rgba(14,14,16,0.8);
+  --fg: #f6f7fb;
+  --border: rgba(255,255,255,0.08);
+  --primary: #ff8c1a;       /* neon orange bubbles */
+  --primary-600: #ff6a00;
+  --glass: rgba(19,22,25,0.7);
+  --glow: 0 0 28px rgba(255,140,26,0.45);
+}
+
+* { outline-color: var(--primary); }
+body { font-family: var(--body-font); }
+
+@layer components {
+  .btn-primary {
+    @apply px-3 py-2 rounded-lg font-semibold;
+    color: white;
+    background: linear-gradient(135deg, var(--primary), var(--primary-600));
+    box-shadow: var(--glow);
+  }
+  .btn-ghost {
+    @apply px-3 py-2 rounded-lg border;
+    border-color: var(--border);
+    background: color-mix(in srgb, var(--glass) 40%, transparent);
+  }
+  .input {
+    @apply w-full rounded-lg px-3 py-2 border;
+    border-color: var(--border);
+    background: color-mix(in srgb, var(--glass) 60%, transparent);
+  }
+  .card {
+    @apply rounded-2xl p-4 border;
+    border-color: var(--border);
+    background: color-mix(in srgb, var(--glass) 70%, transparent);
+    backdrop-filter: blur(16px);
+    box-shadow: var(--glow);
+  }
+  .glass {
+    background: color-mix(in srgb, var(--glass) 75%, transparent);
+    border: 1px solid var(--border);
+    box-shadow: var(--glow);
+    backdrop-filter: blur(10px);
+  }
+  .title { font-family: var(--display-font); letter-spacing:.02em; }
+}
+.dot {
+  width: 6px; height: 6px; border-radius: 9999px;
+  background: var(--accent, #ff8a00);
+  opacity: .9; display: inline-block;
+  animation: bcallio-bounce 1s infinite ease-in-out;
+}
+.dot.delay-150 { animation-delay: .15s }
+.dot.delay-300 { animation-delay: .30s }
+
+@keyframes bcallio-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: .6 }
+  40% { transform: translateY(-3px); opacity: 1 }
+}
