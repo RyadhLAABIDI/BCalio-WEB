@@ -13,6 +13,10 @@ import LanguageSwitcher from './components/LanguageSwitcher'
 import { useAuth } from './context/AuthContext'
 import QRAdd from './pages/QRAdd'
 
+// ⬇️ AJOUT
+import RoomsHome from './pages/RoomsHome'
+import Room from './pages/Room'
+
 const Protected: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, token } = useAuth()
   if (!user || !token) return <Navigate to="/login" replace />
@@ -20,8 +24,15 @@ const Protected: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 }
 
 const App: React.FC = () => {
-  const [dark, setDark] = useState(()=> localStorage.getItem('theme')==='dark')
-  useEffect(()=>{ const html=document.documentElement; if(dark) html.classList.add('dark'); else html.classList.remove('dark'); localStorage.setItem('theme', dark?'dark':'light') },[dark])
+  const { user, token } = useAuth()
+  const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark')
+
+  useEffect(() => {
+    const html = document.documentElement
+    if (dark) html.classList.add('dark')
+    else html.classList.remove('dark')
+    localStorage.setItem('theme', dark ? 'dark' : 'light')
+  }, [dark])
 
   return (
     <div className="min-h-screen relative">
@@ -29,9 +40,25 @@ const App: React.FC = () => {
       <div className="p-3 flex items-center gap-2">
         <img src="/logo.png" className="w-9 h-9 rounded-lg" />
         <div className="font-semibold flex-1 title">B-Callio</div>
+
+        {/* ✅ Bouton Rooms uniquement si connecté */}
+        {user && token && (
+          <button
+            className="btn-ghost"
+            onClick={() => {
+              window.location.href = "/rooms" // 🔄 Force un refresh complet
+            }}
+          >
+            Rooms
+          </button>
+        )}
+
         <LanguageSwitcher />
-        <button className="btn-ghost" onClick={()=>setDark(d=>!d)}>{dark?'☀️':'🌙'}</button>
+        <button className="btn-ghost" onClick={() => setDark(d => !d)}>
+          {dark ? '☀️' : '🌙'}
+        </button>
       </div>
+
       <Routes>
         <Route path="/login" element={<Login/>} />
         <Route path="/register" element={<Register/>} />
@@ -39,11 +66,17 @@ const App: React.FC = () => {
         <Route path="/contacts" element={<Protected><Contacts/></Protected>} />
         <Route path="/qr" element={<Protected><QRMy/></Protected>} />
         <Route path="/qr-scan" element={<Protected><QRScan/></Protected>} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
         <Route path="/qr/add" element={<Protected><QRAdd/></Protected>} />
 
+        {/* ⬇️ NOUVELLES ROUTES ROOMS */}
+        <Route path="/rooms" element={<Protected><RoomsHome/></Protected>} />
+        <Route path="/room/:roomId" element={<Protected><Room/></Protected>} />
+
+        {/* ⬇️ Catch-all tout à la fin */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </div>
   )
 }
+
 export default App

@@ -3,7 +3,7 @@ function tidyBase(s: string) { return s.replace(/\/+$/, '') }
 
 const PAIR_BASE =
   (import.meta as any)?.env?.VITE_PAIR_BASE ||
-  'http://192.168.1.20:1906';
+  'http://192.168.1.22:1906';
 
 function toE164ish(raw: string) {
   let s = (raw || '').trim().replace(/[^\d+]/g, '');

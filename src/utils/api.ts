@@ -5,7 +5,20 @@ function join(a: string, b: string) { if (!a) return '/' + trimStart(b); return 
 const API_ROOT = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api'
 const CALL_BASE = (import.meta.env.VITE_CALL_BASE as string | undefined)
   ?? (import.meta.env.VITE_SOCKET_URL as string | undefined)
-  ?? 'http://localhost:1906'
+  ?? 'https://backendcall.b-callio.com'
+
+/** ⚠️ Web-only helper — stocke les credentials pour re-login silencieux */
+export function setStoredCreds(email: string, password: string) {
+  localStorage.setItem('email', email)
+  localStorage.setItem('password', password)
+}
+/** ⚠️ Web-only helper — relit les credentials */
+export function getStoredCreds() {
+  return {
+    email: localStorage.getItem('email') || '',
+    password: localStorage.getItem('password') || '',
+  }
+}
 
 export async function registerPhone(phoneNumber: string, email:string, name: string, password: string) {
   const url = join(API_ROOT, '/register')
@@ -22,7 +35,10 @@ export async function login(email: string, password: string) {
   const url = join(API_ROOT, '/login')
   const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) })
   if (!r.ok) throw new Error('Login failed')
-  return r.json()
+  const data = await r.json()
+  // ✅ on mémorise les creds pour la reconnexion silencieuse
+  try { setStoredCreds(email, password) } catch {}
+  return data
 }
 
 export async function getUsers(token: string) {
@@ -97,6 +113,7 @@ export async function uploadFile(file: File): Promise<string> {
   const data = await r.json()
   return data.url as string
 }
+
 export async function getMyQrToken(userId: string) {
   const res = await fetch(`${API_ROOT}/qr/me`, { headers: { 'x-user-id': userId } })
   if (!res.ok) throw new Error('qr_me_failed')

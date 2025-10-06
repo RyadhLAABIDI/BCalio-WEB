@@ -22,7 +22,7 @@ export type ConsumeRes = {
 // Base du serveur de pairing
 const API_BASE =
   (import.meta as any)?.env?.VITE_PAIR_BASE ||
-  'http://localhost:1906';
+  'http://192.168.1.22:1906';
 
 // ---- API ----
 export async function issueWeb(): Promise<IssueRes> {

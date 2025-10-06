@@ -47,7 +47,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const sendStopTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   // URL du serveur Socket.IO
-  const socketUrl = (import.meta.env.VITE_SOCKET_URL as string) || 'http://localhost:1906'
+  const socketUrl = (import.meta.env.VITE_SOCKET_URL as string) || 'http://192.168.1.22:1906'
 
   useEffect(() => {
     // Si pas d'utilisateur: couper la socket existante proprement

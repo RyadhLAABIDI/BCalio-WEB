@@ -11,7 +11,7 @@ function tidyBase(s: string) { return s.replace(/\/+$/, '') }
 
 const PAIR_BASE =
   (import.meta as any)?.env?.VITE_PAIR_BASE ||
-  'http://localhost:1906';
+  'http://192.168.1.22:1906';
 
 /**
  * Appelle /api/contacts/merged sur ton serveur local, et adapte la

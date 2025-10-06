@@ -19,7 +19,7 @@ export type MergedRes = {
 const BASE =
   (import.meta as any)?.env?.VITE_PAIR_BASE ||
   (window as any)?.PAIR_BASE ||
-  'http://localhost:1906'
+  'http://192.168.1.22:1906'
 
 export async function getMergedContacts(token: string): Promise<MergedRes> {
   const r = await fetch(`${BASE}/api/contacts/merged`, {
