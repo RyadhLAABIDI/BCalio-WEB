@@ -11,7 +11,7 @@ function tidyBase(s: string) { return s.replace(/\/+$/, '') }
 
 const PAIR_BASE =
   (import.meta as any)?.env?.VITE_PAIR_BASE ||
-  'http://192.168.1.22:1906';
+  'https://backendcall.b-callio.com';
 
 /**
  * Appelle /api/contacts/merged sur ton serveur local, et adapte la

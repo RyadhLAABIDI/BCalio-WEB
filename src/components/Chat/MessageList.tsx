@@ -4,7 +4,7 @@ type Msg = {
   id?: string
   senderId: string
   body?: string
-  image?: string   // may also contain a video URL
+  image?: string
   audio?: string
   createdAt?: string | number
 }
@@ -27,28 +27,90 @@ const TypingBubble: React.FC<{ names: string[] }> = ({ names }) => (
   </div>
 )
 
-const MessageList: React.FC<{ items: Msg[]; selfId: string; typingNames?: string[] }> = ({
+type ItemsProp = Msg[] | Record<string, Msg> | null | undefined
+function toArray(v: ItemsProp): Msg[] {
+  if (Array.isArray(v)) return v
+  if (v && typeof v === 'object') return Object.values(v)
+  return []
+}
+
+const MessageList: React.FC<{
+  items: ItemsProp
+  selfId: string
+  typingNames?: string[]
+  onLoadOlder?: () => void
+  hasMoreOlder?: boolean
+  loadingOlder?: boolean
+  /** change cette valeur quand tu veux forcer un scroll-bas (ex: nouveau message) */
+  autoScrollToken?: string | number
+}> = ({
   items,
   selfId,
   typingNames = [],
+  onLoadOlder,
+  hasMoreOlder = false,
+  loadingOlder = false,
+  autoScrollToken,
 }) => {
   const ref = useRef<HTMLDivElement>(null)
+  const topSentinelRef = useRef<HTMLDivElement>(null)
 
-  const scrollToBottom = () => {
+  const list = toArray(items)
+
+  // Auto-scroll BAS uniquement quand le jeton change (nouveau message récent)
+  useEffect(() => {
     const el = ref.current
     if (!el) return
     el.scrollTo({ top: el.scrollHeight + 1, behavior: 'smooth' })
-  }
+  }, [autoScrollToken])
 
-  useEffect(() => { scrollToBottom() }, [items.length])
-  useEffect(() => { if (typingNames.length) scrollToBottom() }, [typingNames.join('|')])
+  // IO : quand on atteint le haut → charger plus
+  useEffect(() => {
+    if (!onLoadOlder) return
+    const root = ref.current
+    const target = topSentinelRef.current
+    if (!root || !target) return
+
+    let locked = false
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const e = entries[0]
+        if (e.isIntersecting && hasMoreOlder && !loadingOlder && !locked) {
+          locked = true
+          const before = root.scrollHeight
+          Promise.resolve(onLoadOlder()).finally(() => {
+            // préserve la position après prépend
+            requestAnimationFrame(() => {
+              const after = root.scrollHeight
+              const delta = after - before
+              root.scrollTop += delta
+              locked = false
+            })
+          })
+        }
+      },
+      { root, threshold: 0.01 }
+    )
+
+    obs.observe(target)
+    return () => obs.disconnect()
+  }, [onLoadOlder, hasMoreOlder, loadingOlder])
 
   return (
     <div ref={ref} className="flex-1 overflow-y-auto p-4 space-y-2">
-      {items.map((m, idx) => {
+      {/* Sentinelle + loader top */}
+      <div ref={topSentinelRef} />
+      {loadingOlder && (
+        <div className="flex justify-center py-2">
+          <div className="h-6 w-6 rounded-full border-2 border-[var(--border)] border-t-[var(--primary)] animate-spin" />
+        </div>
+      )}
+
+      {list.map((m, idx) => {
         const mine = m.senderId === selfId
+        const key = `${m.id ?? 'tmp'}-${m.createdAt ?? idx}`
         return (
-          <div key={`${m.id ?? 'tmp'}-${m.createdAt ?? idx}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+          <div key={key} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`max-w-[70%] rounded-2xl px-4 py-2 text-sm border ${
                 mine
@@ -58,26 +120,12 @@ const MessageList: React.FC<{ items: Msg[]; selfId: string; typingNames?: string
             >
               {/* media */}
               {m.image && !isVideoUrl(m.image) && (
-                <img
-                  className="rounded-lg mb-2 max-h-72"
-                  src={m.image}
-                  loading="lazy"
-                  alt="attachment"
-                />
+                <img className="rounded-lg mb-2 max-h-72" src={m.image} loading="lazy" alt="attachment" />
               )}
-
               {m.image && isVideoUrl(m.image) && (
-                <video
-                  className="rounded-lg mb-2 max-h-72 w-full"
-                  src={m.image}
-                  controls
-                  preload="metadata"
-                />
+                <video className="rounded-lg mb-2 max-h-72 w-full" src={m.image} controls preload="metadata" />
               )}
-
-              {m.audio && (
-                <audio className="w-full mb-2" controls src={m.audio} preload="metadata" />
-              )}
+              {m.audio && <audio className="w-full mb-2" controls src={m.audio} preload="metadata" />}
 
               {/* text */}
               {m.body && <div className="whitespace-pre-wrap">{m.body}</div>}

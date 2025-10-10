@@ -22,7 +22,7 @@ export type ConsumeRes = {
 // Base du serveur de pairing
 const API_BASE =
   (import.meta as any)?.env?.VITE_PAIR_BASE ||
-  'http://192.168.1.22:1906';
+  'https://backendcall.b-callio.com';
 
 // ---- API ----
 export async function issueWeb(): Promise<IssueRes> {

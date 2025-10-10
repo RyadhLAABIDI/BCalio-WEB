@@ -1,5 +1,5 @@
 // src/utils/me.ts
-const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || '/api';
+const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || '';
 
 /**
  * Retourne le user courant à partir d’un Bearer token.

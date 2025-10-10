@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ConversationList from '../components/Chat/ConversationList'
 import MessageList from '../components/Chat/MessageList'
 import Composer from '../components/Chat/Composer'
-import { myConversations, getMessages, sendMessage, getUsers, createOneToOne, createGroup, markSeen } from '../utils/api'
+import { myConversations, getMessages, getMessagesPage, sendMessage, getUsers, createOneToOne, createGroup, markSeen } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 import { useSocket } from '../context/SocketContext'
 import CallPopup from '../components/CallPopup'
@@ -16,20 +16,28 @@ type ActiveCall = {
   peerId: string
 } | null
 
+const PAGE_SIZE = 15
+
 const Chat: React.FC = () => {
   const { user, token, logout } = useAuth()
   const { socket, typing, presence, requestPresence } = useSocket()
 
   const [conversations, setConversations] = useState<any[]>([])
   const [currentId, setCurrentId] = useState<string | null>(null)
+
   const [messages, setMessages] = useState<any[]>([])
+  const [meta, setMeta] = useState<null | { hasMoreBefore: boolean; nextBeforeId: string | null; hasMoreAfter: boolean; nextAfterId: string | null; count: number }>(null)
+  const [loadingInitial, setLoadingInitial] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+
   const [incoming, setIncoming] = useState<any | null>(null)
   const [activeCall, setActiveCall] = useState<ActiveCall>(null)
   const [creating, setCreating] = useState(false)
 
   const pollRef = useRef<number | undefined>(undefined)
-  // remember what the caller chose (audio/video) because server events may not include callType
   const lastDialTypeRef = useRef<'audio' | 'video'>('audio')
+
+  const [autoScrollToken, setAutoScrollToken] = useState<string>('init') // change quand on veut forcer scroll-bas
 
   const currentConv = useMemo(
     () => conversations.find(c => c.id === currentId) || null,
@@ -55,18 +63,89 @@ const Chat: React.FC = () => {
       .catch(console.error)
   }, [token])
 
-  const loadMessages = async (cid: string) => {
+  // ------- Chargement initial de 15 messages avec meta -------
+  const loadInitial = async (cid: string) => {
     if (!token) return
-    const ms = await getMessages(token, cid)
-    setMessages(ms)
-    await markSeen(token, cid)
+    setLoadingInitial(true)
+    try {
+      const page = await getMessagesPage(token, cid, { take: PAGE_SIZE, includeSender: true, includeSeen: false })
+      const sorted = [...page.data].sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
+      setMessages(sorted)
+      setMeta({
+        count: page.meta.count,
+        hasMoreBefore: page.meta.hasMoreBefore ?? Boolean(sorted.length >= PAGE_SIZE),
+        hasMoreAfter: page.meta.hasMoreAfter ?? false,
+        nextBeforeId: page.meta.nextBeforeId ?? (sorted.length ? String(sorted[0].id) : null),
+        nextAfterId: page.meta.nextAfterId ?? (sorted.length ? String(sorted[sorted.length - 1].id) : null),
+      })
+      setAutoScrollToken(`init:${cid}:${Date.now()}`) // scroll-bas après init
+      await markSeen(token, cid)
+    } finally {
+      setLoadingInitial(false)
+    }
   }
 
+  // ------- Charger plus ancien (top) -------
+  const loadOlder = async () => {
+    if (!token || !currentId) return
+    if (!meta?.hasMoreBefore || !meta?.nextBeforeId) return
+    if (loadingOlder) return
+    setLoadingOlder(true)
+    try {
+      const page = await getMessagesPage(token, currentId, {
+        take: PAGE_SIZE,
+        beforeId: meta.nextBeforeId,
+        includeSender: true,
+        includeSeen: false,
+      })
+      const older = [...page.data].sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
+
+      // dédup par id + concat (older puis existants), tri asc
+      setMessages(prev => {
+        const map = new Map<string, any>()
+        for (const m of older) map.set(String(m.id ?? ''), m)
+        for (const m of prev) map.set(String(m.id ?? ''), m)
+        return Array.from(map.values()).sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
+      })
+
+      setMeta(m => ({
+        count: page.meta.count,
+        hasMoreBefore: page.meta.hasMoreBefore ?? (older.length >= PAGE_SIZE),
+        hasMoreAfter: m?.hasMoreAfter ?? false,
+        nextBeforeId: page.meta.nextBeforeId ?? (older.length ? String(older[0].id) : m?.nextBeforeId ?? null),
+        nextAfterId: m?.nextAfterId ?? null,
+      }))
+      // ⚠️ pas de changement d’autoScrollToken ici → on ne force pas le scroll-bas
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
+
+  // --------- boucle de polling pour nouveaux messages (bas) ---------
   useEffect(() => {
     if (!token || !currentId) return
-    loadMessages(currentId).catch(console.error)
+    // 1er chargement
+    loadInitial(currentId).catch(console.error)
+
+    // polling périodique
     if (pollRef.current) window.clearInterval(pollRef.current)
-    pollRef.current = window.setInterval(() => loadMessages(currentId).catch(() => {}), 2500)
+    pollRef.current = window.setInterval(async () => {
+      try {
+        // on utilise l'ancien getMessages pour récupérer rapidement la page courante (par exemple take=PAGE_SIZE, afterId=meta.nextAfterId)
+        // ici, choix simple: on recharge juste la dernière page (take=PAGE_SIZE) sans afterId, et on merge par id
+        const ms = await getMessages(token, currentId, { take: PAGE_SIZE, includeSender: true, includeSeen: false })
+        if (!ms?.length) return
+        setMessages(prev => {
+          const map = new Map<string, any>()
+          for (const m of prev) map.set(String(m.id ?? ''), m)
+          for (const m of ms) map.set(String(m.id ?? ''), m)
+          const merged = Array.from(map.values()).sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
+          return merged
+        })
+        setAutoScrollToken(`tick:${currentId}:${ms[ms.length - 1]?.id ?? Date.now()}`)
+      } catch {}
+    }, 2500)
+
     return () => {
       if (pollRef.current) window.clearInterval(pollRef.current)
     }
@@ -81,31 +160,25 @@ const Chat: React.FC = () => {
   useEffect(() => {
     if (!socket) return
 
-    // caller view (server may omit callType)
     const openCaller = ({ callId, callType }: any) => {
       if (!otherUser) return
       const t: 'audio' | 'video' = (callType || lastDialTypeRef.current || 'audio')
-      setActiveCall(prev =>
-        prev?.id === callId
-          ? prev
-          : { id: callId, type: t, role: 'caller', peerId: otherUser.id }
-      )
+      setActiveCall(prev => prev?.id === callId ? prev : { id: callId, type: t, role: 'caller', peerId: otherUser.id })
     }
 
-    const onIncoming = (data: any) => {
-      // data: { callId, callerId, callerName, callType, isGroup }
-      setIncoming(data)
-    }
-
-    const onAccepted = (payload: any) => openCaller(payload)     // payload might be {callId}
-    const onInitiated = (payload: any) => openCaller(payload)    // payload might be {callId}
+    const onIncoming = (data: any) => setIncoming(data)
+    const onAccepted = (payload: any) => openCaller(payload)
+    const onInitiated = (payload: any) => openCaller(payload)
     const onEnd = () => setActiveCall(null)
     const onCancelled = () => setActiveCall(null)
     const onTimeout = () => setActiveCall(null)
 
     const onMessage = ({ conversationId, preview }: any) => {
-      if (conversationId === currentId) loadMessages(conversationId).catch(() => {})
-      else if ('Notification' in window && Notification.permission === 'granted') {
+      if (conversationId === currentId) {
+        // on force un reload “bas” via autoScrollToken
+        setAutoScrollToken(`push:${conversationId}:${Date.now()}`)
+        loadInitial(conversationId).catch(() => {})
+      } else if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('New message', { body: preview || 'New message' })
       }
     }
@@ -138,14 +211,14 @@ const Chat: React.FC = () => {
   const onSend = async (text: string, image?: string, audio?: string) => {
     if (!token || !currentId) return
     const msg = await sendMessage(token, currentId, text, image, audio)
-    setMessages(m => [...m, msg])
+    setMessages(m => {
+      const next = [...m, msg]
+      return next.sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
+    })
+    setAutoScrollToken(`send:${currentId}:${msg?.id ?? Date.now()}`) // scroll-bas car on vient d’envoyer
     await markSeen(token, currentId)
     if (socket && otherUser) {
-      socket.emit('notify-message', {
-        toUserId: otherUser.id,
-        conversationId: currentId,
-        preview: text
-      })
+      socket.emit('notify-message', { toUserId: otherUser.id, conversationId: currentId, preview: text })
     }
   }
 
@@ -162,13 +235,7 @@ const Chat: React.FC = () => {
   const call = (type: 'audio' | 'video') => {
     if (!socket || !user || !otherUser) return
     lastDialTypeRef.current = type
-    socket.emit('initiate-call', {
-      callerId: user.id,
-      recipientId: otherUser.id,
-      name: user.name,
-      callType: type
-    })
-    // server will emit 'call-initiated' (sometimes without type) → we use lastDialTypeRef
+    socket.emit('initiate-call', { callerId: user.id, recipientId: otherUser.id, name: user.name, callType: type })
   }
 
   const createGroupUi = async () => {
@@ -201,13 +268,13 @@ const Chat: React.FC = () => {
           {creating ? '…' : 'New Group'}
         </button>
 
-        {/* pass presence so the list can show green dots */}
         <ConversationList
-          items={conversations}
-          currentId={currentId}
-          onSelect={setCurrentId}
-          presence={presence}
-        />
+  items={conversations}
+  currentId={currentId}
+  onSelect={setCurrentId}
+  presence={presence}
+  myId={user?.id}        // 👈 pour masquer ton nom dans les 1–1
+/>
       </div>
 
       {/* RIGHT: messages */}
@@ -219,11 +286,7 @@ const Chat: React.FC = () => {
 
           {otherUser && (
             <div className="flex items-center gap-2 text-xs opacity-80">
-              <span
-                className={`w-2.5 h-2.5 rounded-full ${
-                  presence[otherUser.id]?.online ? 'bg-green-400' : 'bg-gray-500'
-                }`}
-              />
+              <span className={`w-2.5 h-2.5 rounded-full ${presence[otherUser.id]?.online ? 'bg-green-400' : 'bg-gray-500'}`} />
               <span>
                 {presence[otherUser.id]?.online
                   ? 'online'
@@ -240,17 +303,21 @@ const Chat: React.FC = () => {
           </div>
         </div>
 
-        <MessageList items={messages} selfId={user?.id || ''} typingNames={typingNames} />
+        <MessageList
+          items={messages}
+          selfId={user?.id || ''}
+          typingNames={[]}
+          onLoadOlder={loadOlder}
+          hasMoreOlder={!!meta?.hasMoreBefore}
+          loadingOlder={loadingOlder || loadingInitial}
+          autoScrollToken={autoScrollToken}
+        />
+
         {currentConv && (
-          <Composer
-            conversationId={currentConv.id}
-            toUserId={otherUser?.id}
-            onSend={onSend}
-          />
+          <Composer conversationId={currentConv.id} toUserId={otherUser?.id} onSend={onSend} />
         )}
       </div>
 
-      {/* Caller opens panel from call-initiated/accepted; callee opens panel after Accept */}
       {activeCall && (
         <CallPanel
           callId={activeCall.id}
@@ -265,7 +332,6 @@ const Chat: React.FC = () => {
         data={incoming}
         onClose={() => setIncoming(null)}
         onAccept={(payload: any) => {
-          // payload might be {callId, callType, peerId? , callerId?}
           const pid = payload?.peerId ?? payload?.callerId
           const ctype: 'audio' | 'video' = payload?.callType || 'audio'
           if (!pid) return setIncoming(null)
